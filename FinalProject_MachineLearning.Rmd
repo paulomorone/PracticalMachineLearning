@@ -1,0 +1,177 @@
+---
+title: "Final Project - Practical MachineLearning"
+author: "Paulo Morone"
+date: "28 de agosto de 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE }
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Intro
+
+This is the final report of the Practical Machine Learning course offered by Johns Hopkins University at Coursera.com.
+The main goal in this assignment is to predict how well people are doing barbell lifts. Often we measure the number of repetitions, but one of the most important metric is the exercise's quality which due to the measure complexity.
+
+# Backgorund
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset).
+
+# Data
+The training data for this project are available here:
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here:
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+The data for this project come from this source: <http://groupware.les.inf.puc-rio.br/har>. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+```{r libraries, results='hide', message=FALSE, warning=FALSE}
+library(scales)
+library(dplyr) 
+library(ggplot2)
+library(ggthemes)
+library(gridExtra)
+library(caret)
+library(randomForest)
+```
+
+
+## Downloading and loading the data
+```{r load, cache=TRUE} 
+urlTraining <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+urlTesting <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+fileTraining <- "pml-training.csv"
+fileTesting <-  "pml-testing.csv"
+
+#download.file(urlTraining,fileTraining)
+#download.file(urlTesting, fileTesting)
+
+training <- read.csv(fileTraining, na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(fileTesting, na.strings=c("NA","#DIV/0!",""))
+rm(fileTraining)
+rm(fileTesting)
+rm(urlTraining)
+rm(urlTesting)
+
+dim(training); dim(testing)
+
+str(training)
+```
+
+
+## Cleaning the data
+Since the data has lots of NA variables, we are deleting variables that have more than 60% of NA values.
+
+```{r clean, cache=TRUE} 
+if(exists("test_freq")) {
+            remove(test_freq)
+}
+if(exists("n_train")) {
+            remove(n_train)
+}
+
+
+n_train <- names(training)
+
+for(i in 1:length(n_train)) {
+     
+     if(exists("test_freq")){
+            test_freq <- rbind(test_freq, data.frame(n_train[i], as.data.frame(table(is.na(training[,i])))))
+     }else {
+           test_freq <- data.frame(n_train[i], as.data.frame(table(is.na(training[,i]))))
+     }
+}
+test_freq$Freq2 <- test_freq$Freq/nrow(training)
+
+rm(i)
+
+
+# Identify variables with 60% or higher = NA
+test_freq <- test_freq %>%
+filter(test_freq$Var1 == FALSE & test_freq$Freq2 > .6)
+
+# Leave only variables in test_freq
+training <- training[,test_freq$n_train.i]
+testing <- testing[,test_freq$n_train.i]
+
+# Remove X
+training$X <- NULL
+testing$X <- NULL
+      
+rm(n_train)
+rm(test_freq)
+
+dim(training); dim(testing)
+
+str(training)
+
+```
+
+## Subsetting the data
+Considering that our training dataset has 19622 rows, we are using 60% for training purpose and 40% for testing models.
+
+```{r subset, cache=TRUE} 
+
+inTrain <- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+mytrain <- training[ inTrain,]
+mytest <- training[-inTrain,]
+```
+
+# Model
+## 1.Random Forest
+Random Forest is the first model to be trained.
+```{r RandomForest, cache=TRUE} 
+mod_rf <- randomForest(classe~., data=mytrain, importance=T)
+
+mod_rf
+```
+
+Predicting with Random Forest using the testing dataset:
+```{r PredictRandomForest, cache=TRUE} 
+pred_rf  <- predict(mod_rf, newdata = mytest)
+```
+
+Checking its accuracy:
+```{r AccuracyRandomForest, cache=TRUE}
+confusionMatrix(pred_rf, mytest$classe)$overall[1]
+```
+
+## 2.Linear Discriminant Analysis
+Linear Discriminant Analysis is the last model to be trained.
+```{r LDA, cache=TRUE, results='hide', message=FALSE, warning=FALSE} 
+mod_lda <- train(classe ~ .,data=mytrain, method="lda")
+
+mod_lda
+```
+
+Predicting with LDA using the testing dataset:
+```{r PredictLDA, cache=TRUE} 
+pred_lda <- predict(mod_lda, newdata = mytest)
+```
+
+Checking its accuracy:
+```{r AccuracyLDA, cache=TRUE}
+confusionMatrix(pred_lda, mytest$classe)$overall[1]
+```
+
+
+# Conclusion
+Considering the high accuracy obtained by the Ransom Forest model I have decided to use this model in the validation dataset.
+
+```{r validation, cache=TRUE}
+# Transforming the validation dataset into the same datatype as the training data.
+testing$problem_id <- NULL
+testing <- rbind(mytrain[1, -59] , testing)
+testing <- testing[-1,]
+
+# Final Prediction
+pred_rf_final <- predict(mod_rf, newdata = testing)
+
+pred_rf_final
+
+```
+
+
